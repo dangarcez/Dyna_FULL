@@ -1,0 +1,1 @@
+{% if result("run_javascript_1")["grupoServiceNow"] == "Time AKS - Infraestrutura" %} AKS-SIIPR-PRD {% else %} SIIPR {% endif %}- {{ event()["event.name"] }}

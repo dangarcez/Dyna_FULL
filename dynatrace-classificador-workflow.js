@@ -1,0 +1,301 @@
+/**
+ * Dynatrace Workflow - Run JavaScript (Standard Workflow)
+ *
+ * Classifica problemas do AKS com prioridade para Smartscape, fallback
+ * para causa raiz legada e, por ultimo, para dt.davis.impact_level.
+ * A consulta DQL busca o estado atual do problema no Grail.
+ *
+ * Antes de usar: ajuste GRUPOS e EXCECOES. Verifique as permissoes
+ * de consulta ao Grail da identidade que executa o Workflow.
+ */
+import { execution } from "@dynatrace-sdk/automation-utils";
+import { queryExecutionClient } from "@dynatrace-sdk/client-query";
+
+const GRUPOS = {
+   INFRAESTRUTURA: "Time AKS - Infraestrutura",
+   APLICACAO: "Time Aplicacoes",
+   TRIAGEM: "NOC - Triagem"
+};
+
+const TIPOS_INFRA = new Set([
+   "K8S_CLUSTER", "K8S_NODE", "HOST", "KUBERNETES_CLUSTER", "KUBERNETES_NODE"
+]);
+
+const TIPOS_APP = new Set([
+   "SERVICE", "FRONTEND", "K8S_SERVICE", "K8S_DEPLOYMENT", "K8S_STATEFULSET",
+   "K8S_REPLICASET", "K8S_JOB", "K8S_CRONJOB", "PROCESS_GROUP", "PROCESS_GROUP_INSTANCE"
+]);
+
+// Exemplos: "K8S_DEPLOYMENT-XXXX": "INFRAESTRUTURA"
+const EXCECOES = {};
+
+// Recebe tanto campos planos do DQL ("event.id") quanto objetos aninhados.
+function getField(obj, caminho) {
+   if (!obj || typeof obj !== "object") return undefined;
+   if (Object.prototype.hasOwnProperty.call(obj, caminho)) return obj[caminho];
+   return caminho.split(".").reduce(
+      (parte, chave) => parte && typeof parte === "object" ? parte[chave] : undefined,
+      obj
+   );
+}
+
+function textoValido(valor) {
+   return typeof valor === "string" && valor.trim() ? valor.trim() : null;
+}
+
+function tipoDoId(id) {
+   return id.split("-")[0] || null;
+}
+
+function normalizarSmartscape(valor) {
+   if (typeof valor === "string") {
+      try {
+         valor = JSON.parse(valor);
+      } catch {
+         // Aceita tambem a representacao como ID simples.
+         valor = { id: valor };
+      }
+   }
+   if (Array.isArray(valor)) valor = valor[0];
+   if (!valor || typeof valor !== "object") return null;
+
+   const id = textoValido(valor.id);
+   if (!id) return null;
+   return {
+      id,
+      type: textoValido(valor.type) || tipoDoId(id),
+      name: textoValido(valor.name)
+   };
+}
+
+/**
+ * Prioridade: Smartscape com ID valido > legado com ID valido > ausente.
+ * Nunca usa o nome legado para uma entidade moderna de ID diferente.
+ */
+function extrairCausaRaiz(problema) {
+   const legadoId = textoValido(getField(problema, "root_cause_entity_id"));
+   const legadoNome = textoValido(getField(problema, "root_cause_entity_name"));
+   const moderno = normalizarSmartscape(getField(problema, "root_cause.smartscape_entity"));
+
+   if (moderno) {
+      return {
+         entidade: {
+            ...moderno,
+            name: moderno.name || (moderno.id === legadoId ? legadoNome : null)
+         },
+         origem: "SMARTSCAPE"
+      };
+   }
+
+   if (legadoId) {
+      return {
+         entidade: { id: legadoId, type: tipoDoId(legadoId), name: legadoNome },
+         origem: "LEGADO"
+      };
+   }
+
+   return { entidade: null, origem: "AUSENTE" };
+}
+
+function classificarCausaRaiz(raiz) {
+   if (!raiz?.id) {
+      return {
+         categoria: "TRIAGEM", confianca: "BAIXA",
+         motivo: "Causa raiz ainda nao identificada"
+      };
+   }
+   if (Object.prototype.hasOwnProperty.call(EXCECOES, raiz.id)) {
+      return {
+         categoria: EXCECOES[raiz.id], confianca: "ALTA",
+         motivo: "Regra explicita de ownership"
+      };
+   }
+
+   const tipo = String(raiz.type || tipoDoId(raiz.id))
+      .toUpperCase()
+      .replace(/^DT\.(ENTITY|SMARTSCAPE)\./, "")
+      .replace(/\./g, "_");
+
+   if (TIPOS_INFRA.has(tipo)) {
+      return {
+         categoria: "INFRAESTRUTURA", confianca: "ALTA",
+         motivo: `Causa raiz de infraestrutura: ${tipo}`
+      };
+   }
+   if (TIPOS_APP.has(tipo)) {
+      return {
+         categoria: "APLICACAO", confianca: "MEDIA",
+         motivo: `Causa raiz de aplicacao: ${tipo}`
+      };
+   }
+   return {
+      categoria: "TRIAGEM", confianca: "BAIXA",
+      motivo: `Entidade exige contexto adicional: ${tipo}`
+   };
+}
+
+// A documentacao apresenta o impacto de problemas como conjunto de niveis.
+// Aceita arrays, strings simples, JSON de array e strings separadas por ; ou ,.
+function normalizarImpactLevel(valor) {
+   let entradas = [];
+   if (Array.isArray(valor)) {
+      entradas = valor.flatMap(v => Array.isArray(v) ? v : [v]);
+   } else if (typeof valor === "string") {
+      const texto = valor.trim();
+      if (!texto) return [];
+      if (texto.startsWith("[")) {
+         try {
+            const json = JSON.parse(texto);
+            if (Array.isArray(json)) entradas = json;
+         } catch { /* Permite o formato ['Application', 'Services']. */ }
+      }
+      if (!entradas.length) entradas = texto.replace(/^\[/, "").replace(/\]$/, "").split(/[;,]/);
+   } else {
+      return [];
+   }
+
+   const canonicos = {
+      APPLICATION: "Application", SERVICES: "Services",
+      INFRASTRUCTURE: "Infrastructure", INFRAESTRUCTURE: "Infrastructure",
+      ENVIRONMENT: "Environment", SYNTHETIC: "Synthetic"
+   };
+   return [...new Set(entradas
+      .filter(v => typeof v === "string")
+      .map(v => v.trim().replace(/^[\s'"`]+|[\s'"`]+$/g, ""))
+      .filter(Boolean)
+      .map(v => canonicos[v.toUpperCase()] || v))];
+}
+
+// O impacto indica camadas afetadas, nao a causa comprovada do problema.
+// Por seguranca, SOMENTE um nivel unico pode decidir o fallback.
+function classificarImpactLevel(niveis) {
+   if (niveis.length === 1) {
+      switch (niveis[0]) {
+         case "Infrastructure":
+            return { categoria: "INFRAESTRUTURA", confianca: "BAIXA", motivo: "Fallback por impacto unico: Infrastructure" };
+         case "Services":
+         case "Application":
+            return { categoria: "APLICACAO", confianca: "BAIXA", motivo: `Fallback por impacto unico: ${niveis[0]}` };
+         case "Environment":
+            return { categoria: "TRIAGEM", confianca: "BAIXA", motivo: "Environment indica impacto no ambiente, mas nao identifica o time responsavel" };
+         case "Synthetic":
+            return { categoria: "TRIAGEM", confianca: "BAIXA", motivo: "Synthetic indica impacto no monitoramento sintetico, sem identificar a causa" };
+         default:
+            return { categoria: "TRIAGEM", confianca: "BAIXA", motivo: `Nivel de impacto nao mapeado: ${niveis[0]}` };
+      }
+   }
+   if (niveis.length > 1) {
+      return { categoria: "TRIAGEM", confianca: "BAIXA", motivo: `Impactos multiplos (${niveis.join(", ")}): fallback nao aplicado` };
+   }
+   return { categoria: "TRIAGEM", confianca: "BAIXA", motivo: "Impact level ausente" };
+}
+
+function decidirClassificacao(raiz, niveis, excecoes) {
+   const primaria = classificarCausaRaiz(raiz);
+   // Uma excecao explicita tem prioridade ate quando determina TRIAGEM.
+   if (primaria.motivo === "Regra explicita de ownership") {
+      return { ...primaria, criterioClassificacao: "EXCECAO" };
+   }
+   if (primaria.categoria !== "TRIAGEM") {
+      return { ...primaria, criterioClassificacao: "CAUSA_RAIZ" };
+   }
+   const fallback = classificarImpactLevel(niveis);
+   if (fallback.categoria !== "TRIAGEM") {
+      return { ...fallback, criterioClassificacao: "IMPACT_LEVEL" };
+   }
+   return {
+      ...primaria,
+      criterioClassificacao: "TRIAGEM",
+      motivo: `${primaria.motivo}. ${fallback.motivo}`
+   };
+}
+
+async function consultarProblema(problemId) {
+   // IMPORTANTE: incluir AMBAS as representacoes da causa raiz.
+   const query = `
+    fetch dt.davis.problems, from:now()-30d
+    | filter event.id == ${JSON.stringify(problemId)}
+    | fields
+        timestamp,
+        event.id,
+        display_id,
+        event.name,
+        event.description,
+        event.status,
+        event.category,
+        dt.davis.is_duplicate,
+        dt.davis.impact_level,
+        root_cause.smartscape_entity,
+        root_cause_entity_id,
+        root_cause_entity_name,
+        smartscape.affected_entities
+    | limit 1
+  `;
+
+   let resposta = await queryExecutionClient.queryExecute({
+      body: { query, requestTimeoutMilliseconds: 20000 }
+   });
+
+   let tentativas = 0;
+   while (resposta.state === "RUNNING" || resposta.state === "NOT_STARTED") {
+      if (!resposta.requestToken || tentativas++ >= 5) {
+         throw new Error("Consulta Grail nao finalizada");
+      }
+      resposta = await queryExecutionClient.queryPoll({
+         requestToken: resposta.requestToken,
+         requestTimeoutMilliseconds: 5000
+      });
+   }
+
+   if (resposta.state !== "SUCCEEDED") {
+      throw new Error(`Falha na consulta Grail: ${resposta.state}`);
+   }
+   return resposta.result?.records?.[0] ?? null;
+}
+
+export default async function () {
+   const ex = await execution();
+   const evento = ex.params?.event;
+   const problemId = getField(evento, "event.id");
+   if (!problemId) throw new Error("Evento sem event.id");
+
+   const atual = await consultarProblema(problemId);
+   const problema = atual || evento;
+   const { entidade: raiz, origem } = extrairCausaRaiz(problema);
+   const impactLevels = normalizarImpactLevel(getField(problema, "dt.davis.impact_level"));
+   const decisao = decidirClassificacao(raiz, impactLevels);
+
+   const status = getField(problema, "event.status") || "UNKNOWN";
+   const duplicado = [true, "true"].includes(getField(problema, "dt.davis.is_duplicate"));
+   const acao = duplicado ? "IGNORAR_DUPLICADO" :
+      status === "CLOSED" ? "RESOLVER_EXISTENTE" : "CRIAR_OU_ATUALIZAR";
+
+   const saida = {
+      problemId,
+      displayId: getField(problema, "display_id") || "",
+      titulo: getField(problema, "event.name") || "",
+      descricao: getField(problema, "event.description") || "",
+      status,
+      categoriaProblema: getField(problema, "event.category") || "",
+      classificacao: decisao.categoria,
+      confianca: decisao.confianca,
+      motivo: decisao.motivo,
+      criterioClassificacao: decisao.criterioClassificacao,
+      impactLevels,
+      causaRaiz: {
+         id: raiz?.id || null,
+         type: raiz?.type || null,
+         name: raiz?.name || null
+      },
+      fonteCausaRaiz: origem, // SMARTSCAPE | LEGADO | AUSENTE
+      grupoServiceNow: GRUPOS[decisao.categoria],
+      correlationId: `dynatrace:${problemId}`,
+      acaoServiceNow: acao,
+      fonte: atual ? "GRAIL" : "EVENTO_TRIGGER",
+      // Classificacao pelo impacto e provisoria ate aparecer causa raiz classificavel.
+      precisaReavaliar: (decisao.categoria === "TRIAGEM" || decisao.criterioClassificacao === "IMPACT_LEVEL") && status === "ACTIVE"
+   };
+
+   console.log(JSON.stringify(saida));
+   return saida;
+}

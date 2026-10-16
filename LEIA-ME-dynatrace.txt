@@ -1,0 +1,27 @@
+CLASSIFICADOR AKS - Dynatrace Workflow + simulador local
+
+Conteudo
+- dynatrace-classificador-workflow.js : script da acao Run JavaScript no Dynatrace.
+- dynatrace-workflow-js.txt          : mesma versao do codigo em TXT para copiar/colar.
+- simulador-dynatrace-aks.html       : interface offline para testar Raw Response DQL.
+
+Prioridade das regras
+1. Causa raiz Smartscape (id valido) e regras explicitas de ownership.
+2. Causa raiz legada root_cause_entity_id/root_cause_entity_name.
+3. dt.davis.impact_level, somente quando a causa raiz NAO decide:
+   - SOMENTE Infrastructure => INFRAESTRUTURA
+   - SOMENTE Services ou SOMENTE Application => APLICACAO
+   - Environment, Synthetic, misturas ou ausente => TRIAGEM
+
+O campo de impacto pode ser array, string simples, string separada por ponto
+ e virgula ou JSON de array. Variantes com valores repetidos iguais sao unificadas.
+
+IMPORTANTE: impacto significa camadas afetadas, nao prova de causa raiz.
+O fallback por impacto tem confianca BAIXA e, se problema esta ACTIVE,
+precisaReavaliar sera true.
+
+No Dynatrace, ajuste GRUPOS e EXCECOES antes de utilizar. Configure
+permissoes de consulta Grail para o Workflow.
+
+No simulador, cada registro colado representa o estado atual simulado do
+problema: nao ha chamadas ao Dynatrace, ServiceNow nem rede externa.

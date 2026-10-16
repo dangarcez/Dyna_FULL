@@ -1,0 +1,13 @@
+Fluxo ->
+Problema aberto | ou atualização do campo Root Cause Entity
+
+Classificação por entidade raiz root
+
+Identificado? > Fila de aplicação | Fila de infraestrutura
+Não identificado? > Fila padrão
+
+aks-superapp-prd-001(depende root cause) - event.name 
+superapp(depende root cause) - event.name
+
+
+Substituir time de aplicações

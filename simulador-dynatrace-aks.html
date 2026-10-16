@@ -1,0 +1,855 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Simulador de classificação — Dynatrace AKS</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f6f7f9;
+      --surface: #fff;
+      --text: #253040;
+      --muted: #667386;
+      --border: #dfe4ea;
+      --primary: #285c84;
+      --primary-soft: #eaf2f8;
+      --soft: #f3f5f7;
+      --error: #a62d2d;
+      --success: #287250;
+      --warning: #926315;
+      font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+      font-synthesis: none;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--bg); color: var(--text); font-size: 14px; line-height: 1.5; }
+    button, input, select, textarea { font: inherit; }
+    button { cursor: pointer; }
+    .container { max-width: 1390px; margin: 0 auto; padding: 28px 30px 65px; }
+    .top { margin-bottom: 20px; }
+    .eyebrow { font-size: 12px; font-weight: 700; letter-spacing: .07em; color: var(--muted); text-transform: uppercase; margin: 0 0 5px; }
+    h1 { font-size: 27px; line-height: 1.25; letter-spacing: -.03em; margin: 0 0 7px; font-weight: 650; }
+    h2 { font-size: 17px; line-height: 1.3; margin: 0; font-weight: 650; }
+    h3 { font-size: 13px; margin: 0 0 10px; font-weight: 700; }
+    .sub { color: var(--muted); margin: 0; max-width: 900px; }
+    .panel { background: var(--surface); border: 1px solid var(--border); border-radius: 9px; }
+    .panel-head { padding: 19px 21px 0; display: flex; justify-content: space-between; align-items: flex-start; gap: 14px; flex-wrap: wrap; }
+    .panel-body { padding: 17px 21px 20px; }
+    .hint { color: var(--muted); font-size: 12px; margin: 5px 0 0; }
+    .buttons { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+    .btn { background: white; border: 1px solid #ccd5df; color: #33465c; border-radius: 6px; padding: 8px 13px; line-height: 1.4; font-weight: 550; min-height: 36px; }
+    .btn:hover { background: #f5f8fa; }
+    .btn:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible, summary:focus-visible { outline: 2px solid #528fbd; outline-offset: 2px; }
+    .btn.primary { background: var(--primary); color: white; border-color: var(--primary); }
+    .btn.primary:hover { background: #214f73; }
+    .btn:disabled { opacity: .45; cursor: default; }
+    textarea { width: 100%; border: 1px solid #ccd5df; border-radius: 6px; color: var(--text); background: #fcfdff; padding: 12px; resize: vertical; font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace; font-size: 12px; line-height: 1.55; tab-size: 2; }
+    #jsonInput { min-height: 205px; }
+    .editor-bar { display: flex; gap: 9px; justify-content: space-between; align-items: center; flex-wrap: wrap; margin-top: 10px; }
+    .caption { color: var(--muted); font-size: 12px; }
+    .alert { margin-top: 11px; padding: 9px 12px; border: 1px solid #ecc2c2; background: #fff6f6; color: var(--error); border-radius: 6px; white-space: pre-wrap; }
+    .alert[hidden], [hidden] { display: none !important; }
+    details.config { border-top: 1px solid var(--border); padding: 13px 21px 15px; }
+    summary { color: #34475b; cursor: pointer; font-weight: 600; }
+    summary::marker { color: #8896a5; }
+    .config-grid { display: grid; gap: 12px; grid-template-columns: repeat(3, 1fr); margin-top: 15px; }
+    label { font-size: 12px; font-weight: 600; color: #4a586b; display: block; margin-bottom: 5px; }
+    input[type="text"], select { width: 100%; border: 1px solid #ccd5df; background: white; padding: 8px 9px; border-radius: 6px; color: var(--text); min-height: 36px; }
+    #exceptions { min-height: 68px; margin-top: 3px; }
+    .results-section { margin-top: 22px; }
+    .results-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin: 0 0 11px; }
+    .summary-strip { display: flex; gap: 10px; margin-bottom: 12px; flex-wrap: wrap; }
+    .stat { display: flex; gap: 8px; align-items: center; border: 1px solid var(--border); background: white; padding: 8px 12px; border-radius: 6px; color: #596578; font-size: 12px; }
+    .stat strong { font-size: 16px; color: var(--text); font-variant-numeric: tabular-nums; }
+    .workspace { display: grid; grid-template-columns: minmax(345px, .95fr) minmax(425px, 1.05fr); gap: 14px; align-items: start; }
+    .records { overflow: hidden; }
+    .records-toolbar { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; padding: 13px 14px; border-bottom: 1px solid var(--border); }
+    .records-toolbar strong { font-size: 13px; }
+    .filter { max-width: 190px; }
+    .record-list { max-height: 635px; overflow: auto; }
+    .record { display: block; text-align: left; width: 100%; border: 0; border-bottom: 1px solid #ebeff2; background: #fff; padding: 13px 15px; }
+    .record:last-child { border-bottom: none; }
+    .record:hover { background: #f7f9fb; }
+    .record.selected { background: #edf4fa; box-shadow: inset 3px 0 0 var(--primary); }
+    .record-first { display: flex; gap: 8px; justify-content: space-between; align-items: center; margin-bottom: 4px; }
+    .record-id { font-size: 12px; color: var(--muted); font-weight: 650; font-variant-numeric: tabular-nums; }
+    .record-title { font-weight: 600; font-size: 13px; overflow-wrap: anywhere; }
+    .record-bottom { display: flex; justify-content: space-between; gap: 12px; color: var(--muted); font-size: 12px; margin-top: 5px; }
+    .record-bottom span { min-width: 0; overflow-wrap: anywhere; }
+    .pill { display: inline-flex; align-items: center; border-radius: 5px; padding: 2px 7px; font-weight: 600; font-size: 11px; white-space: nowrap; background: var(--soft); color: #596578; }
+    .pill.infra { background: #e9f1f8; color: #215c86; }
+    .pill.app { background: #e9f5ee; color: #286c46; }
+    .pill.triage { background: #fff3de; color: #835d16; }
+    .pill.invalid { background: #fbeaea; color: #9c2929; }
+    .detail { min-height: 300px; }
+    .detail-heading { border-bottom: 1px solid var(--border); padding: 18px 20px 15px; }
+    .detail-heading h2 { margin: 6px 0 5px; font-size: 17px; overflow-wrap: anywhere; }
+    .detail-heading p { color: var(--muted); margin: 0; font-size: 12px; overflow-wrap: anywhere; }
+    .detail-body { padding: 16px 20px 20px; }
+    .section-block + .section-block { border-top: 1px solid #e8edf1; padding-top: 15px; margin-top: 16px; }
+    dl { margin: 0; display: grid; grid-template-columns: 165px minmax(0, 1fr); gap: 9px 14px; font-size: 13px; }
+    dt { color: var(--muted); }
+    dd { margin: 0; font-weight: 500; overflow-wrap: anywhere; }
+    .value-strong { font-weight: 700; }
+    .note { border: 1px solid #dae5ec; border-radius: 6px; background: #f6f9fb; padding: 10px 12px; font-size: 12px; color: #52667a; margin-top: 14px; }
+    .list-entities { margin: 0; padding-left: 16px; color: #45556a; font-size: 12px; }
+    .list-entities li + li { margin-top: 4px; }
+    .raw { margin-top: 15px; }
+    .raw summary { font-weight: 600; font-size: 12px; }
+    pre { white-space: pre-wrap; word-break: break-word; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; border: 1px solid var(--border); border-radius: 6px; padding: 12px; background: #f8fafc; max-height: 270px; overflow: auto; font-size: 11.5px; margin: 9px 0 0; }
+    .empty { padding: 46px 22px; text-align: center; color: var(--muted); }
+    .empty strong { display: block; margin-bottom: 6px; color: #526174; }
+    .mini-actions { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 14px; }
+    .footer { padding: 20px 3px 0; font-size: 12px; color: var(--muted); }
+    code { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: .92em; }
+    @media (max-width: 900px) {
+      .workspace { grid-template-columns: 1fr; }
+      .record-list { max-height: 330px; }
+    }
+    @media (max-width: 650px) {
+      .container { padding: 20px 13px 40px; }
+      h1 { font-size: 22px; }
+      .panel-head, .panel-body { padding-left: 14px; padding-right: 14px; }
+      details.config { padding-left: 14px; padding-right: 14px; }
+      .config-grid { grid-template-columns: 1fr; }
+      .detail-body, .detail-heading { padding-left: 14px; padding-right: 14px; }
+      dl { grid-template-columns: 120px minmax(0, 1fr); gap: 7px 10px; }
+      .editor-bar { align-items: stretch; }
+      .editor-bar .buttons { width: 100%; }
+    }
+  </style>
+</head>
+<body>
+  <main class="container">
+    <header class="top">
+      <p class="eyebrow">Dynatrace · AKS · ServiceNow</p>
+      <h1>Simulador de classificação de problemas</h1>
+      <p class="sub">Cole o <strong>Raw Response</strong> de uma consulta DQL. Cada registro simula o estado atual do problema. A classificação prioriza a causa raiz Smartscape, depois a legada e, se nenhuma delas permitir decidir, usa o nível de impacto como fallback.</p>
+    </header>
+
+    <section class="panel" aria-labelledby="entradaTitulo">
+      <div class="panel-head">
+        <div>
+          <h2 id="entradaTitulo">1. Dados de entrada</h2>
+          <p class="hint">Aceita <code>result.records</code>, <code>records</code>, um array ou um único registro JSON.</p>
+        </div>
+        <div class="buttons">
+          <button type="button" class="btn" id="exampleBtn">Carregar exemplo</button>
+          <button type="button" class="btn" id="uploadBtn">Abrir arquivo .json</button>
+          <input type="file" id="fileInput" accept=".json,application/json,text/plain" hidden />
+        </div>
+      </div>
+      <div class="panel-body">
+        <label for="jsonInput">JSON do Raw Response</label>
+        <textarea id="jsonInput" spellcheck="false" placeholder='{
+  "result": {
+    "records": [
+      {
+        "event.id": "...",
+        "display_id": "P-12345",
+        "event.name": "...",
+        "event.status": "ACTIVE",
+        "root_cause.smartscape_entity": {"id": "...", "type": "host", "name": "..."},
+        "root_cause_entity_id": "HOST-...",
+        "root_cause_entity_name": "aks-node-01",
+        "dt.davis.impact_level": ["Infrastructure"]
+      }
+    ]
+  }
+}' aria-describedby="inputHint"></textarea>
+        <div class="editor-bar">
+          <span id="inputHint" class="caption">Nada é enviado para a internet. Atalho: Ctrl + Enter.</span>
+          <div class="buttons">
+            <button type="button" class="btn" id="copyDqlBtn">Copiar DQL sugerida</button>
+            <button type="button" class="btn" id="clearBtn">Limpar</button>
+            <button type="button" class="btn primary" id="analyzeBtn">Analisar problemas</button>
+          </div>
+        </div>
+        <div id="errorBox" class="alert" role="alert" hidden></div>
+      </div>
+      <details class="config">
+        <summary>Configurações de roteamento (opcional)</summary>
+        <p class="hint">Use os nomes de Assignment Group desejados e exceções por ID de entidade. A classificação principal segue os conjuntos de tipos do JavaScript original.</p>
+        <div class="config-grid">
+          <div><label for="groupInfra">Grupo de infraestrutura</label><input id="groupInfra" type="text" value="Time AKS - Infraestrutura" /></div>
+          <div><label for="groupApp">Grupo de aplicação</label><input id="groupApp" type="text" value="Time Aplicacoes" /></div>
+          <div><label for="groupTriage">Grupo de triagem</label><input id="groupTriage" type="text" value="NOC - Triagem" /></div>
+        </div>
+        <div style="margin-top: 13px;">
+          <label for="exceptions">Exceções por ID (objeto JSON, opcional)</label>
+          <textarea id="exceptions" spellcheck="false" placeholder='{"K8S_DEPLOYMENT-123": "INFRAESTRUTURA"}'></textarea>
+          <p class="hint">Valores aceitos: <code>INFRAESTRUTURA</code>, <code>APLICACAO</code> ou <code>TRIAGEM</code>.</p>
+        </div>
+      </details>
+    </section>
+
+    <section class="results-section" aria-labelledby="resultadoTitulo">
+      <div class="results-head">
+        <div><h2 id="resultadoTitulo">2. Resultado da simulação</h2><p class="hint" id="resultSubtitle">Nenhum registro processado.</p></div>
+        <button type="button" class="btn" id="exportBtn" disabled>Exportar resultados .json</button>
+      </div>
+      <div class="summary-strip" id="stats" hidden>
+        <div class="stat"><strong id="totalValue">0</strong> registros</div>
+        <div class="stat"><strong id="infraValue">0</strong> infraestrutura</div>
+        <div class="stat"><strong id="appValue">0</strong> aplicação</div>
+        <div class="stat"><strong id="triageValue">0</strong> triagem</div>
+        <div class="stat"><strong id="invalidValue">0</strong> inválidos</div>
+      </div>
+      <div class="workspace">
+        <div class="panel records">
+          <div class="records-toolbar"><strong>Problemas</strong><select class="filter" id="filterSelect" aria-label="Filtrar resultados" disabled>
+            <option value="TODOS">Todas as classificações</option>
+            <option value="INFRAESTRUTURA">Infraestrutura</option>
+            <option value="APLICACAO">Aplicação</option>
+            <option value="TRIAGEM">Triagem</option>
+            <option value="INVALIDO">Inválidos</option>
+          </select></div>
+          <div class="record-list" id="recordList"><div class="empty"><strong>Sem resultados</strong>Cole um JSON e clique em “Analisar problemas”.</div></div>
+        </div>
+        <article class="panel detail" id="detailPane" aria-live="polite"><div class="empty"><strong>Detalhes do problema</strong>Selecione um registro após executar a simulação.</div></article>
+      </div>
+    </section>
+    <p class="footer">Simulação local: não executa DQL real, não cria tickets e não verifica o ServiceNow. Ordem das regras: <code>root_cause.smartscape_entity</code> → <code>root_cause_entity_id</code> → <code>dt.davis.impact_level</code> (somente nível único) → triagem. Os níveis de impacto indicam efeitos observados, não comprovam a causa raiz. Registros com o mesmo <code>event.id</code> são avaliados separadamente, sem mesclar snapshots.</p>
+  </main>
+<script>
+  "use strict";
+
+  // Mesmas regras do classificador atualizado do Workflow, incluindo fallback de impacto.
+  const TIPOS_INFRA = new Set([
+    "K8S_CLUSTER", "K8S_NODE", "HOST", "KUBERNETES_CLUSTER", "KUBERNETES_NODE"
+  ]);
+  const TIPOS_APP = new Set([
+    "SERVICE", "FRONTEND", "K8S_SERVICE", "K8S_DEPLOYMENT", "K8S_STATEFULSET",
+    "K8S_REPLICASET", "K8S_JOB", "K8S_CRONJOB", "PROCESS_GROUP", "PROCESS_GROUP_INSTANCE"
+  ]);
+
+  const DQL = `fetch dt.davis.problems, from:now()-7d
+| fields timestamp, event.id, display_id, event.name, event.description, event.status, event.category, dt.davis.is_duplicate, dt.davis.impact_level, root_cause.smartscape_entity, root_cause_entity_id, root_cause_entity_name, smartscape.affected_entities
+| limit 100`;
+
+  const SAMPLE = {
+    state: "SUCCEEDED",
+    result: { records: [
+      {
+        "timestamp": "2026-10-15T15:40:00Z", "event.id": "problem-node-001", "display_id": "P-10001",
+        "event.name": "Falha no node do AKS e indisponibilidade de serviços", "event.description": "Serviços apresentaram erros após problema no node.",
+        "event.status": "ACTIVE", "event.category": "AVAILABILITY", "dt.davis.is_duplicate": false,
+        "root_cause.smartscape_entity": { id: "K8S_NODE-ABC01", type: "k8s_node", name: "aks-pool-000001" },
+        "smartscape.affected_entities": [{ id: "SERVICE-111", type: "service", name: "api-pagamentos" }, { id: "SERVICE-112", type: "service", name: "api-clientes" }]
+      },
+      {
+        "timestamp": "2026-10-15T15:45:00Z", "event.id": "problem-app-002", "display_id": "P-10002",
+        "event.name": "Taxa de erros elevada em api-pedidos", "event.description": "Exceções durante requisições HTTP.",
+        "event.status": "ACTIVE", "event.category": "ERROR", "dt.davis.is_duplicate": false,
+        "root_cause.smartscape_entity": { id: "SERVICE-DEF02", type: "service", name: "api-pedidos" },
+        "smartscape.affected_entities": [{ id: "SERVICE-DEF02", type: "service", name: "api-pedidos" }]
+      },
+      {
+        "timestamp": "2026-10-15T15:48:00Z", "event.id": "problem-unknown-003", "display_id": "P-10003",
+        "event.name": "Pods aguardando agendamento", "event.status": "ACTIVE", "event.category": "RESOURCE_CONTENTION",
+        "root_cause.smartscape_entity": { id: "K8S_POD-789", type: "k8s_pod", name: "checkout-7f9d2" },
+        "smartscape.affected_entities": [{ id: "K8S_POD-789", type: "k8s_pod", name: "checkout-7f9d2" }]
+      },
+      {
+        "timestamp": "2026-10-15T15:50:00Z", "event.id": "problem-no-root-004", "display_id": "P-10004",
+        "event.name": "Lentidão sem causa raiz identificada", "event.status": "ACTIVE", "event.category": "SLOWDOWN",
+        "root_cause.smartscape_entity": null, "smartscape.affected_entities": []
+      },
+      {
+        "timestamp": "2026-10-15T16:10:00Z", "event.id": "problem-closed-005", "display_id": "P-10005",
+        "event.name": "Problema resolvido na api-relatorios", "event.status": "CLOSED", "event.category": "ERROR",
+        "root_cause.smartscape_entity": { id: "SERVICE-GHI05", type: "service", name: "api-relatorios" }
+      },
+      {
+        "timestamp": "2026-10-15T16:15:00Z", "event.id": "problem-legacy-host-006", "display_id": "P-10006",
+        "event.name": "Node AKS (apenas campos legados)", "event.status": "ACTIVE", "event.category": "AVAILABILITY",
+        "root_cause_entity_id": "HOST-LEGACY06", "root_cause_entity_name": "aks-pool-000006"
+      },
+      {
+        "timestamp": "2026-10-15T16:20:00Z", "event.id": "problem-legacy-app-007", "display_id": "P-10007",
+        "event.name": "Erros de servico (apenas campos legados)", "event.status": "ACTIVE", "event.category": "ERROR",
+        "root_cause_entity_id": "SERVICE-LEGACY07", "root_cause_entity_name": "api-legacy"
+      },
+      {
+        "timestamp": "2026-10-15T16:25:00Z", "event.id": "problem-legacy-fallback-008", "display_id": "P-10008",
+        "event.name": "Smartscape nulo, causa raiz legada disponivel", "event.status": "ACTIVE", "event.category": "AVAILABILITY",
+        "root_cause.smartscape_entity": { id: null, type: "host" },
+        "root_cause_entity_id": "K8S_NODE-LEGACY08", "root_cause_entity_name": "aks-pool-000008"
+      },
+      {
+        "timestamp": "2026-10-15T16:30:00Z", "event.id": "problem-conflicting-009", "display_id": "P-10009",
+        "event.name": "Smartscape e legado divergem (Smartscape tem prioridade)", "event.status": "ACTIVE", "event.category": "ERROR",
+        "root_cause.smartscape_entity": { id: "SERVICE-NEW09", type: "service", name: "api-new" },
+        "root_cause_entity_id": "HOST-OLD09", "root_cause_entity_name": "aks-node-antigo",
+        "dt.davis.impact_level": ["Infrastructure", "Services"]
+      },
+      {
+        "event.id": "problem-impact-infra-010", "display_id": "P-10010",
+        "event.name": "Sem causa raiz, impacto somente Infrastructure", "event.status": "ACTIVE",
+        "root_cause.smartscape_entity": null, "dt.davis.impact_level": ["Infrastructure"]
+      },
+      {
+        "event.id": "problem-impact-services-011", "display_id": "P-10011",
+        "event.name": "Sem causa raiz, impacto somente Services", "event.status": "ACTIVE",
+        "dt.davis.impact_level": ["Services"]
+      },
+      {
+        "event.id": "problem-impact-application-012", "display_id": "P-10012",
+        "event.name": "Sem causa raiz, impacto somente Application", "event.status": "ACTIVE",
+        "dt.davis.impact_level": "Application"
+      },
+      {
+        "event.id": "problem-impact-mixed-013", "display_id": "P-10013",
+        "event.name": "Impacto misto de infraestrutura e serviços", "event.status": "ACTIVE",
+        "dt.davis.impact_level": ["Infrastructure", "Services"]
+      },
+      {
+        "event.id": "problem-impact-env-014", "display_id": "P-10014",
+        "event.name": "Impacto Environment (sem evidência de ownership)", "event.status": "ACTIVE",
+        "dt.davis.impact_level": ["Environment"]
+      },
+      {
+        "event.id": "problem-impact-synthetic-015", "display_id": "P-10015",
+        "event.name": "Impacto apenas Synthetic", "event.status": "ACTIVE",
+        "dt.davis.impact_level": "Synthetic"
+      },
+      {
+        "event.id": "problem-impact-with-pod-016", "display_id": "P-10016",
+        "event.name": "Pod como raiz ambígua com impacto Infrastructure", "event.status": "ACTIVE",
+        "root_cause.smartscape_entity": { "id": "K8S_POD-16", "type": "k8s_pod", "name": "pod-prod-16" },
+        "dt.davis.impact_level": "Infrastructure"
+      },
+      {
+        "event.id": "problem-impact-string-multi-017", "display_id": "P-10017",
+        "event.name": "Impactos Application e Services em string", "event.status": "ACTIVE",
+        "dt.davis.impact_level": "Application; Services"
+      }
+    ] }
+  };
+
+  const $ = id => document.getElementById(id);
+  let results = [];
+  let selectedIndex = null;
+
+  function getField(record, dottedName) {
+    if (record == null || typeof record !== "object") return undefined;
+    if (Object.prototype.hasOwnProperty.call(record, dottedName)) return record[dottedName];
+    return dottedName.split(".").reduce((part, key) => (part && typeof part === "object") ? part[key] : undefined, record);
+  }
+
+  // Exibe cada linha da consulta como se ela fosse a resposta da consulta
+  // de atualização do Workflow; nenhuma comunicação externa é realizada.
+  function getRecords(payload) {
+    if (Array.isArray(payload)) return payload;
+    if (!payload || typeof payload !== "object") throw new Error("O JSON precisa ser um objeto ou um array de registros.");
+    if (Array.isArray(payload.result?.records)) return payload.result.records;
+    if (Array.isArray(payload.records)) return payload.records;
+    if (Array.isArray(payload.data?.records)) return payload.data.records;
+    if (Array.isArray(payload.data)) return payload.data;
+    if (Array.isArray(payload.result?.data)) return payload.result.data;
+    if (Array.isArray(payload.results)) return payload.results;
+    if (payload["event.id"] || getField(payload, "event.id") || payload.display_id || getField(payload, "root_cause.smartscape_entity") !== undefined || getField(payload, "root_cause_entity_id") !== undefined || getField(payload, "dt.davis.impact_level") !== undefined) return [payload];
+    if (payload.state && payload.state !== "SUCCEEDED") {
+      throw new Error(`A consulta ainda não retornou registros (state: ${payload.state}). Copie o Raw Response de uma consulta concluída.`);
+    }
+    throw new Error("Não encontrei registros. Esperado: result.records, records, array de registros ou registro individual.");
+  }
+
+  function readConfig() {
+    const groups = {
+      INFRAESTRUTURA: $("groupInfra").value.trim() || "Time AKS - Infraestrutura",
+      APLICACAO: $("groupApp").value.trim() || "Time Aplicacoes",
+      TRIAGEM: $("groupTriage").value.trim() || "NOC - Triagem"
+    };
+    const raw = $("exceptions").value.trim();
+    let exceptions = {};
+    if (raw) {
+      try { exceptions = JSON.parse(raw); }
+      catch (err) { throw new Error("JSON inválido nas exceções de ownership: " + err.message); }
+      if (!exceptions || typeof exceptions !== "object" || Array.isArray(exceptions)) {
+        throw new Error("As exceções precisam ser um objeto JSON, por exemplo: {\"K8S_DEPLOYMENT-123\": \"INFRAESTRUTURA\"}.");
+      }
+      for (const [entityId, category] of Object.entries(exceptions)) {
+        if (!["INFRAESTRUTURA", "APLICACAO", "TRIAGEM"].includes(category)) {
+          throw new Error(`A exceção ${entityId} usa a categoria inválida ${JSON.stringify(category)}.`);
+        }
+      }
+    }
+    return { groups, exceptions };
+  }
+
+  function classificarCausaRaiz(raiz, exceptions) {
+    if (!raiz?.id) {
+      return { categoria: "TRIAGEM", confianca: "BAIXA", motivo: "Causa raiz ainda nao identificada" };
+    }
+    if (Object.prototype.hasOwnProperty.call(exceptions, raiz.id)) {
+      return { categoria: exceptions[raiz.id], confianca: "ALTA", motivo: "Regra explicita de ownership" };
+    }
+    const tipo = String(raiz.type || raiz.id.split("-")[0])
+      .toUpperCase().replace(/^DT\.(ENTITY|SMARTSCAPE)\./, "").replace(/\./g, "_");
+    if (TIPOS_INFRA.has(tipo)) {
+      return { categoria: "INFRAESTRUTURA", confianca: "ALTA", motivo: `Causa raiz de infraestrutura: ${tipo}` };
+    }
+    if (TIPOS_APP.has(tipo)) {
+      return { categoria: "APLICACAO", confianca: "MEDIA", motivo: `Causa raiz de aplicacao: ${tipo}` };
+    }
+    return { categoria: "TRIAGEM", confianca: "BAIXA", motivo: `Entidade exige contexto adicional: ${tipo}` };
+  }
+
+  // A documentacao apresenta o impacto de problemas como conjunto de niveis.
+  // Aceita arrays, strings simples, JSON de array e strings separadas por ; ou ,.
+  function normalizarImpactLevel(valor) {
+    let entradas = [];
+    if (Array.isArray(valor)) {
+      entradas = valor.flatMap(v => Array.isArray(v) ? v : [v]);
+    } else if (typeof valor === "string") {
+      const texto = valor.trim();
+      if (!texto) return [];
+      if (texto.startsWith("[")) {
+        try {
+          const json = JSON.parse(texto);
+          if (Array.isArray(json)) entradas = json;
+        } catch { /* Permite o formato ['Application', 'Services']. */ }
+      }
+      if (!entradas.length) entradas = texto.replace(/^\[/, "").replace(/\]$/, "").split(/[;,]/);
+    } else {
+      return [];
+    }
+  
+    const canonicos = {
+      APPLICATION: "Application", SERVICES: "Services",
+      INFRASTRUCTURE: "Infrastructure", INFRAESTRUCTURE: "Infrastructure",
+      ENVIRONMENT: "Environment", SYNTHETIC: "Synthetic"
+    };
+    return [...new Set(entradas
+      .filter(v => typeof v === "string")
+      .map(v => v.trim().replace(/^[\s'"`]+|[\s'"`]+$/g, ""))
+      .filter(Boolean)
+      .map(v => canonicos[v.toUpperCase()] || v))];
+  }
+  
+  // O impacto indica camadas afetadas, nao a causa comprovada do problema.
+  // Por seguranca, SOMENTE um nivel unico pode decidir o fallback.
+  function classificarImpactLevel(niveis) {
+    if (niveis.length === 1) {
+      switch (niveis[0]) {
+        case "Infrastructure":
+          return { categoria: "INFRAESTRUTURA", confianca: "BAIXA", motivo: "Fallback por impacto unico: Infrastructure" };
+        case "Services":
+        case "Application":
+          return { categoria: "APLICACAO", confianca: "BAIXA", motivo: `Fallback por impacto unico: ${niveis[0]}` };
+        case "Environment":
+          return { categoria: "TRIAGEM", confianca: "BAIXA", motivo: "Environment indica impacto no ambiente, mas nao identifica o time responsavel" };
+        case "Synthetic":
+          return { categoria: "TRIAGEM", confianca: "BAIXA", motivo: "Synthetic indica impacto no monitoramento sintetico, sem identificar a causa" };
+        default:
+          return { categoria: "TRIAGEM", confianca: "BAIXA", motivo: `Nivel de impacto nao mapeado: ${niveis[0]}` };
+      }
+    }
+    if (niveis.length > 1) {
+      return { categoria: "TRIAGEM", confianca: "BAIXA", motivo: `Impactos multiplos (${niveis.join(", ")}): fallback nao aplicado` };
+    }
+    return { categoria: "TRIAGEM", confianca: "BAIXA", motivo: "Impact level ausente" };
+  }
+  
+  function decidirClassificacao(raiz, niveis, excecoes) {
+    const primaria = classificarCausaRaiz(raiz, excecoes);
+    // Uma excecao explicita tem prioridade ate quando determina TRIAGEM.
+    if (primaria.motivo === "Regra explicita de ownership") {
+      return { ...primaria, criterioClassificacao: "EXCECAO" };
+    }
+    if (primaria.categoria !== "TRIAGEM") {
+      return { ...primaria, criterioClassificacao: "CAUSA_RAIZ" };
+    }
+    const fallback = classificarImpactLevel(niveis);
+    if (fallback.categoria !== "TRIAGEM") {
+      return { ...fallback, criterioClassificacao: "IMPACT_LEVEL" };
+    }
+    return {
+      ...primaria,
+      criterioClassificacao: "TRIAGEM",
+      motivo: `${primaria.motivo}. ${fallback.motivo}`
+    };
+  }
+
+  function textoValido(valor) {
+    return typeof valor === "string" && valor.trim() ? valor.trim() : null;
+  }
+
+  function tipoDoId(id) {
+    return id.split("-")[0] || null;
+  }
+
+  function normalizeEntity(input) {
+    if (typeof input === "string") {
+      try { input = JSON.parse(input); }
+      catch { input = { id: input }; }
+    }
+    if (Array.isArray(input)) input = input[0];
+    if (!input || typeof input !== "object") return null;
+    const id = textoValido(input.id);
+    if (!id) return null;
+    return {
+      id,
+      type: textoValido(input.type) || tipoDoId(id),
+      name: textoValido(input.name)
+    };
+  }
+
+  // Prioriza o ID moderno. Se nao existir, utiliza ID e nome legados.
+  // Nao mistura o nome antigo com uma entidade nova de ID diferente.
+  function extrairCausaRaiz(record) {
+    const legadoId = textoValido(getField(record, "root_cause_entity_id"));
+    const legadoNome = textoValido(getField(record, "root_cause_entity_name"));
+    const moderno = normalizeEntity(getField(record, "root_cause.smartscape_entity"));
+
+    if (moderno) {
+      return {
+        entidade: {
+          ...moderno,
+          name: moderno.name || (moderno.id === legadoId ? legadoNome : null)
+        },
+        origem: "SMARTSCAPE"
+      };
+    }
+    if (legadoId) {
+      return {
+        entidade: { id: legadoId, type: tipoDoId(legadoId), name: legadoNome },
+        origem: "LEGADO"
+      };
+    }
+    return { entidade: null, origem: "AUSENTE" };
+  }
+
+  function simulate(record, index, config) {
+    if (record === null || typeof record !== "object" || Array.isArray(record)) {
+      return { index, record, error: "O registro não é um objeto JSON válido." };
+    }
+    const problemId = getField(record, "event.id");
+    if (!problemId) {
+      return { index, record, error: "Falta o campo event.id. No Workflow, isso interromperia a execução deste problema." };
+    }
+    const { entidade: raiz, origem } = extrairCausaRaiz(record);
+    const impactLevels = normalizarImpactLevel(getField(record, "dt.davis.impact_level"));
+    const decision = decidirClassificacao(raiz, impactLevels, config.exceptions);
+    const status = getField(record, "event.status") || "UNKNOWN";
+    const duplicated = getField(record, "dt.davis.is_duplicate") === true || getField(record, "dt.davis.is_duplicate") === "true";
+    const action = duplicated ? "IGNORAR_DUPLICADO" : status === "CLOSED" ? "RESOLVER_EXISTENTE" : "CRIAR_OU_ATUALIZAR";
+    const output = {
+      problemId,
+      displayId: getField(record, "display_id") || "",
+      titulo: getField(record, "event.name") || "",
+      descricao: getField(record, "event.description") || "",
+      status,
+      categoriaProblema: getField(record, "event.category") || "",
+      classificacao: decision.categoria,
+      confianca: decision.confianca,
+      motivo: decision.motivo,
+      criterioClassificacao: decision.criterioClassificacao,
+      impactLevels,
+      causaRaiz: { id: raiz?.id || null, type: raiz?.type || null, name: raiz?.name || null },
+      fonteCausaRaiz: origem,
+      grupoServiceNow: config.groups[decision.categoria],
+      correlationId: `dynatrace:${problemId}`,
+      acaoServiceNow: action,
+      fonte: "REGISTRO_LOCAL",
+      precisaReavaliar: (decision.categoria === "TRIAGEM" || decision.criterioClassificacao === "IMPACT_LEVEL") && status === "ACTIVE"
+    };
+    return {
+      index, record, output,
+      affected: getField(record, "smartscape.affected_entities")
+    };
+  }
+
+  function showError(message) {
+    const node = $("errorBox");
+    node.textContent = message || "";
+    node.hidden = !message;
+  }
+
+  function analyze() {
+    showError("");
+    const raw = $("jsonInput").value.trim();
+    if (!raw) { showError("Cole um JSON ou carregue um arquivo para iniciar."); return; }
+    try {
+      const payload = JSON.parse(raw);
+      const records = getRecords(payload);
+      if (records.length === 0) throw new Error("A consulta não retornou registros.");
+      const config = readConfig();
+      results = records.map((record, index) => simulate(record, index, config));
+      selectedIndex = 0;
+      $("filterSelect").value = "TODOS";
+      $("filterSelect").disabled = false;
+      $("exportBtn").disabled = false;
+      render();
+    } catch (err) {
+      showError("Não foi possível analisar: " + err.message);
+    }
+  }
+
+  function elem(tag, className, text) {
+    const n = document.createElement(tag);
+    if (className) n.className = className;
+    if (text !== undefined && text !== null) n.textContent = String(text);
+    return n;
+  }
+
+  function textOrDash(value) { return value === undefined || value === null || value === "" ? "—" : String(value); }
+  function addDL(dl, name, value, cls = "") {
+    dl.append(elem("dt", "", name));
+    dl.append(elem("dd", cls, textOrDash(value)));
+  }
+  function categoryClass(cat) {
+    return ({ INFRAESTRUTURA: "infra", APLICACAO: "app", TRIAGEM: "triage" })[cat] || "invalid";
+  }
+  function categoryLabel(cat) {
+    return ({ INFRAESTRUTURA: "Infraestrutura", APLICACAO: "Aplicação", TRIAGEM: "Triagem" })[cat] || "Inválido";
+  }
+  function pill(cat) { return elem("span", "pill " + categoryClass(cat), categoryLabel(cat)); }
+
+  function render() {
+    const totals = { INFRAESTRUTURA: 0, APLICACAO: 0, TRIAGEM: 0, INVALIDO: 0 };
+    results.forEach(item => totals[item.output?.classificacao || "INVALIDO"]++);
+    $("stats").hidden = !results.length;
+    $("totalValue").textContent = results.length;
+    $("infraValue").textContent = totals.INFRAESTRUTURA;
+    $("appValue").textContent = totals.APLICACAO;
+    $("triageValue").textContent = totals.TRIAGEM;
+    $("invalidValue").textContent = totals.INVALIDO;
+    $("resultSubtitle").textContent = `${results.length} registro(s) processado(s) localmente. Cada linha simula sua própria consulta de atualização.`;
+    renderList();
+    renderDetail();
+  }
+
+  function renderList() {
+    const list = $("recordList");
+    list.replaceChildren();
+    const filter = $("filterSelect").value;
+    const shown = results.filter(r => filter === "TODOS" || (r.output?.classificacao || "INVALIDO") === filter);
+    if (!shown.length) {
+      const empty = elem("div", "empty");
+      empty.append(elem("strong", "", "Nenhum problema neste filtro."));
+      list.append(empty);
+      return;
+    }
+    for (const result of shown) {
+      const out = result.output;
+      const record = result.record;
+      const btn = elem("button", "record" + (selectedIndex === result.index ? " selected" : ""));
+      btn.type = "button";
+      btn.setAttribute("aria-pressed", selectedIndex === result.index ? "true" : "false");
+      const first = elem("div", "record-first");
+      first.append(elem("span", "record-id", out?.displayId || getField(record, "display_id") || `Registro ${result.index + 1}`));
+      first.append(pill(out?.classificacao));
+      btn.append(first);
+      btn.append(elem("div", "record-title", out?.titulo || getField(record, "event.name") || "Problema sem título"));
+      const bottom = elem("div", "record-bottom");
+      bottom.append(elem("span", "", out?.causaRaiz?.name || out?.causaRaiz?.type || (out?.impactLevels?.length ? "Impacto: " + out.impactLevels.join(", ") : "Sem causa raiz")));
+      bottom.append(elem("span", "", out?.status || "Registro inválido"));
+      btn.append(bottom);
+      btn.addEventListener("click", () => {
+        selectedIndex = result.index;
+        renderList();
+        renderDetail();
+      });
+      list.append(btn);
+    }
+  }
+
+  function makeBlock(title) {
+    const block = elem("section", "section-block");
+    block.append(elem("h3", "", title));
+    return block;
+  }
+  function jsonDetails(title, payload) {
+    const detail = elem("details", "raw");
+    detail.append(elem("summary", "", title));
+    detail.append(elem("pre", "", JSON.stringify(payload, null, 2)));
+    return detail;
+  }
+  function button(text, handler) {
+    const b = elem("button", "btn", text);
+    b.type = "button";
+    b.addEventListener("click", handler);
+    return b;
+  }
+
+  function renderDetail() {
+    const pane = $("detailPane");
+    pane.replaceChildren();
+    const item = results[selectedIndex];
+    if (!item) {
+      const empty = elem("div", "empty");
+      empty.append(elem("strong", "", "Selecione um problema."));
+      pane.append(empty);
+      return;
+    }
+    const out = item.output;
+    const heading = elem("div", "detail-heading");
+    heading.append(pill(out?.classificacao));
+    heading.append(elem("h2", "", out?.titulo || getField(item.record, "event.name") || "Problema sem título"));
+    heading.append(elem("p", "", `${out?.displayId || getField(item.record, "display_id") || "Sem display_id"} · Registro ${item.index + 1}`));
+    pane.append(heading);
+    const body = elem("div", "detail-body");
+    pane.append(body);
+
+    if (item.error) {
+      const block = makeBlock("Registro não classificável");
+      block.append(elem("p", "alert", item.error));
+      block.append(jsonDetails("Visualizar registro original", item.record));
+      body.append(block);
+      return;
+    }
+
+    const pBlock = makeBlock("Dados do problema");
+    const pDL = elem("dl");
+    addDL(pDL, "Problem ID", out.problemId);
+    addDL(pDL, "Status", out.status);
+    addDL(pDL, "Categoria", out.categoriaProblema);
+    addDL(pDL, "Timestamp", getField(item.record, "timestamp"));
+    pBlock.append(pDL);
+    if (out.descricao) {
+      const desc = elem("p", "hint", out.descricao);
+      desc.style.whiteSpace = "pre-wrap";
+      pBlock.append(desc);
+    }
+    body.append(pBlock);
+
+    const rootBlock = makeBlock("Causa raiz considerada");
+    const rootDL = elem("dl");
+    addDL(rootDL, "Origem", ({ SMARTSCAPE: "Smartscape (atual)", LEGADO: "Campos legados (fallback)", AUSENTE: "Não identificada" })[out.fonteCausaRaiz]);
+    addDL(rootDL, "Nome", out.causaRaiz.name);
+    addDL(rootDL, "Tipo", out.causaRaiz.type);
+    addDL(rootDL, "ID da entidade", out.causaRaiz.id);
+    rootBlock.append(rootDL);
+    if (out.fonteCausaRaiz === "LEGADO") {
+      rootBlock.append(elem("p", "hint", "Os campos root_cause_entity_id / root_cause_entity_name foram utilizados porque não havia um ID Smartscape válido."));
+    }
+    body.append(rootBlock);
+
+    const impactBlock = makeBlock("Impacto observado (fallback)");
+    const impactDL = elem("dl");
+    addDL(impactDL, "dt.davis.impact_level", out.impactLevels.length ? out.impactLevels.join(" · ") : "Ausente");
+    addDL(impactDL, "Usado para decidir?", out.criterioClassificacao === "IMPACT_LEVEL" ? "Sim" : "Não");
+    impactBlock.append(impactDL);
+    impactBlock.append(elem("p", "hint", "O fallback por impacto só decide quando existe exatamente um nível: Infrastructure → Infraestrutura; Services ou Application → Aplicação. Environment, Synthetic e combinações ficam sem decisão."));
+    body.append(impactBlock);
+
+    const decBlock = makeBlock("Decisão de roteamento");
+    const decDL = elem("dl");
+    addDL(decDL, "Classificação", categoryLabel(out.classificacao), "value-strong");
+    addDL(decDL, "Critério aplicado", ({ CAUSA_RAIZ: "Causa raiz", EXCECAO: "Exceção de ownership", IMPACT_LEVEL: "Fallback: impact_level", TRIAGEM: "Sem evidência conclusiva" })[out.criterioClassificacao]);
+    addDL(decDL, "Confiança da regra", out.confianca);
+    addDL(decDL, "Motivo", out.motivo);
+    addDL(decDL, "Assignment Group", out.grupoServiceNow, "value-strong");
+    addDL(decDL, "Ação simulada", out.acaoServiceNow);
+    addDL(decDL, "Reavaliar depois?", out.precisaReavaliar ? "Sim" : "Não");
+    addDL(decDL, "Correlation ID", out.correlationId);
+    decBlock.append(decDL);
+    if (out.classificacao === "TRIAGEM") {
+      decBlock.append(elem("div", "note", "Nenhuma regra conclusiva para roteamento automático. O Workflow encaminharia para triagem e, se estiver ativo, marcaria para reavaliação."));
+    }
+    if (out.criterioClassificacao === "IMPACT_LEVEL") {
+      decBlock.append(elem("div", "note", "Classificação provisória baseada apenas no nível de impacto. Reavalie o problema caso o Davis identifique uma causa raiz posteriormente."));
+    }
+    if (out.acaoServiceNow === "IGNORAR_DUPLICADO") {
+      decBlock.append(elem("div", "note", "O registro foi marcado como duplicado. A ação simulada é ignorar a criação de outro incidente."));
+    }
+    body.append(decBlock);
+
+    const entities = Array.isArray(item.affected) ? item.affected : [];
+    if (entities.length > 0) {
+      const affectedBlock = makeBlock(`Entidades afetadas (${entities.length})`);
+      const ul = elem("ul", "list-entities");
+      entities.slice(0, 12).forEach(entity => {
+        ul.append(elem("li", "", `${entity?.name || entity?.id || "Entidade"} · ${entity?.type || "tipo desconhecido"}`));
+      });
+      if (entities.length > 12) ul.append(elem("li", "", `... e mais ${entities.length - 12} entidades`));
+      affectedBlock.append(ul);
+      affectedBlock.append(elem("p", "hint", "Entidades afetadas são exibidas apenas como contexto; não alteram a classificação no script original."));
+      body.append(affectedBlock);
+    }
+
+    const bottom = makeBlock("JSON e ações");
+    const actions = elem("div", "mini-actions");
+    actions.append(button("Copiar saída do JavaScript", () => copyText(JSON.stringify(out, null, 2), "Saída copiada.")));
+    bottom.append(actions);
+    bottom.append(jsonDetails("Visualizar saída estruturada", out));
+    bottom.append(jsonDetails("Visualizar registro original", item.record));
+    body.append(bottom);
+  }
+
+  async function copyText(text, doneMessage) {
+    try {
+      if (navigator.clipboard?.writeText) await navigator.clipboard.writeText(text);
+      else {
+        const t = elem("textarea"); t.value = text;
+        t.style.position = "fixed"; t.style.opacity = "0";
+        document.body.append(t); t.select();
+        if (!document.execCommand("copy")) throw new Error("Cópia não disponível neste navegador.");
+        t.remove();
+      }
+      $("resultSubtitle").textContent = doneMessage;
+    } catch {
+      showError("Não foi possível copiar automaticamente. Selecione e copie o texto manualmente.");
+    }
+  }
+
+  function exportResults() {
+    if (!results.length) return;
+    const payload = {
+      tipo: "simulacao_local_dynatrace_aks",
+      registros: results.map(r => r.output ? r.output : { indice: r.index, erro: r.error })
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "resultado-classificacao-dynatrace.json";
+    document.body.append(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+
+  $("analyzeBtn").addEventListener("click", analyze);
+  $("exampleBtn").addEventListener("click", () => {
+    $("jsonInput").value = JSON.stringify(SAMPLE, null, 2);
+    analyze();
+  });
+  $("clearBtn").addEventListener("click", () => {
+    $("jsonInput").value = "";
+    showError("");
+    results = []; selectedIndex = null;
+    $("stats").hidden = true;
+    $("filterSelect").disabled = true;
+    $("filterSelect").value = "TODOS";
+    $("exportBtn").disabled = true;
+    $("recordList").replaceChildren(elem("div", "empty", "Nenhum problema analisado."));
+    $("detailPane").replaceChildren(elem("div", "empty", "Selecione um registro após executar a simulação."));
+    $("resultSubtitle").textContent = "Nenhum registro processado.";
+  });
+  $("filterSelect").addEventListener("change", () => {
+    const filter = $("filterSelect").value;
+    const selected = results[selectedIndex];
+    if (filter !== "TODOS" && (selected?.output?.classificacao || "INVALIDO") !== filter) {
+      selectedIndex = results.find(r => (r.output?.classificacao || "INVALIDO") === filter)?.index ?? null;
+    }
+    renderList(); renderDetail();
+  });
+  $("copyDqlBtn").addEventListener("click", () => copyText(DQL, "DQL sugerida copiada."));
+  $("exportBtn").addEventListener("click", exportResults);
+  $("uploadBtn").addEventListener("click", () => $("fileInput").click());
+  $("fileInput").addEventListener("change", async event => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    try { $("jsonInput").value = await file.text(); analyze(); }
+    catch (err) { showError("Erro ao abrir arquivo: " + err.message); }
+    event.target.value = "";
+  });
+  $("jsonInput").addEventListener("keydown", event => {
+    if ((event.ctrlKey || event.metaKey) && event.key === "Enter") { event.preventDefault(); analyze(); }
+  });
+</script>
+</body>
+</html>
